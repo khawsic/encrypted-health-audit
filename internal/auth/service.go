@@ -23,7 +23,14 @@ func NewService(db *gorm.DB, secret string) *Service {
 
 // 🔐 Register User
 func (s *Service) Register(name, email, password, role string) error {
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+
+	// Whitelist valid roles — admin must be seeded directly, never registered
+	validRoles := map[string]bool{"doctor": true, "patient": true}
+	if !validRoles[role] {
+		return errors.New("invalid role: must be 'doctor' or 'patient'")
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), 12)
 	if err != nil {
 		return err
 	}
@@ -52,7 +59,6 @@ func (s *Service) Login(email, password string) (string, error) {
 		return "", errors.New("invalid email or password")
 	}
 
-	// Create JWT
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id": user.ID,
 		"role":    user.Role,

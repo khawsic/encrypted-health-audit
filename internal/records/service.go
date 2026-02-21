@@ -2,7 +2,7 @@ package record
 
 import (
 	"errors"
-	
+	"log"
 
 	"github.com/khawsic/health/internal/audit"
 	"github.com/khawsic/health/internal/security"
@@ -49,7 +49,9 @@ func (s *Service) Create(patientID, doctorID uint, diagnosis, treatment string) 
 
 	// Log the creation in audit
 	if s.auditService != nil {
-		_ = s.auditService.Log(doctorID, "CREATE_RECORD", &record.ID)
+		if err := s.auditService.Log(doctorID, "CREATE_RECORD", &record.ID); err != nil {
+			log.Printf("⚠️  Audit log failed for CREATE_RECORD: %v", err)
+		}
 	}
 
 	return nil
@@ -78,41 +80,46 @@ func (s *Service) GetByPatient(patientID uint) ([]MedicalRecord, error) {
 
 	// Log the read in audit
 	if s.auditService != nil {
-		_ = s.auditService.Log(patientID, "READ_RECORDS", nil)
+		if err := s.auditService.Log(patientID, "READ_RECORDS", nil); err != nil {
+			log.Printf("⚠️  Audit log failed for READ_RECORDS: %v", err)
+		}
 	}
 
 	return records, nil
 }
 
-// EmergencyAccess decrypts a record using a temporary key
-func (s *Service) EmergencyAccess(recordID uint, tempKey string, userID uint) (*MedicalRecord, error) {
+// EmergencyAccess decrypts a record using the master key with elevated audit logging
+func (s *Service) EmergencyAccess(recordID uint, userID uint) (*MedicalRecord, error) {
 	var record MedicalRecord
 	if err := s.db.First(&record, recordID).Error; err != nil {
-		return nil, err
+		return nil, errors.New("record not found")
 	}
 
-	decDiag, err := security.Decrypt(tempKey, record.Diagnosis)
+	// Decrypt using the master key — emergency access is tracked via audit log
+	decDiag, err := security.Decrypt(s.key, record.Diagnosis)
 	if err != nil {
-		return nil, errors.New("failed to decrypt diagnosis with temporary key")
+		return nil, errors.New("failed to decrypt diagnosis")
 	}
 
-	decTreat, err := security.Decrypt(tempKey, record.Treatment)
+	decTreat, err := security.Decrypt(s.key, record.Treatment)
 	if err != nil {
-		return nil, errors.New("failed to decrypt treatment with temporary key")
+		return nil, errors.New("failed to decrypt treatment")
 	}
 
 	record.Diagnosis = decDiag
 	record.Treatment = decTreat
 
-	// Log the emergency access
+	// Log emergency access — this is the critical audit trail for emergency events
 	if s.auditService != nil {
-		_ = s.auditService.Log(userID, "EMERGENCY_ACCESS", &record.ID)
+		if err := s.auditService.Log(userID, "EMERGENCY_ACCESS", &record.ID); err != nil {
+			log.Printf("⚠️  Audit log failed for EMERGENCY_ACCESS: %v", err)
+		}
 	}
 
 	return &record, nil
 }
 
-// List all records (admin view)
+// GetAll decrypts all records (admin view)
 func (s *Service) GetAll() ([]MedicalRecord, error) {
 	var records []MedicalRecord
 	if err := s.db.Find(&records).Error; err != nil {
@@ -120,8 +127,17 @@ func (s *Service) GetAll() ([]MedicalRecord, error) {
 	}
 
 	for i := range records {
-		records[i].Diagnosis, _ = security.Decrypt(s.key, records[i].Diagnosis)
-		records[i].Treatment, _ = security.Decrypt(s.key, records[i].Treatment)
+		decDiag, err := security.Decrypt(s.key, records[i].Diagnosis)
+		if err != nil {
+			return nil, errors.New("failed to decrypt diagnosis for record")
+		}
+		decTreat, err := security.Decrypt(s.key, records[i].Treatment)
+		if err != nil {
+			return nil, errors.New("failed to decrypt treatment for record")
+		}
+
+		records[i].Diagnosis = decDiag
+		records[i].Treatment = decTreat
 	}
 
 	return records, nil

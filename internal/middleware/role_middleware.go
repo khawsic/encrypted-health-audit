@@ -16,7 +16,13 @@ func RoleMiddleware(allowedRoles ...string) gin.HandlerFunc {
 			return
 		}
 
-		userRole := role.(string)
+		// Safe type assertion — prevents panic on unexpected type
+		userRole, ok := role.(string)
+		if !ok {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Invalid role format"})
+			c.Abort()
+			return
+		}
 
 		for _, allowed := range allowedRoles {
 			if userRole == allowed {

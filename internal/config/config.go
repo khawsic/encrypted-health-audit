@@ -18,14 +18,14 @@ func Load() *Config {
 	// Load .env file
 	err := godotenv.Load()
 	if err != nil {
-		log.Println("No .env file found")
+		log.Println("⚠️  No .env file found — expecting environment variables to be set")
 	}
 
 	return &Config{
 		DBUrl:         getEnv("DB_URL", ""),
-		JWTSecret:     getEnv("JWT_SECRET", "defaultsecret"),
+		JWTSecret:     getEnv("JWT_SECRET", ""),
 		Port:          getEnv("PORT", "8080"),
-		EncryptionKey: getEnv("ENCRYPTION_KEY", "12345678901234567890123456789012"), // 32 chars for AES-256
+		EncryptionKey: getEnv("ENCRYPTION_KEY", ""),
 	}
 }
 
