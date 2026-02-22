@@ -6,6 +6,7 @@ import (
 	"github.com/khawsic/health/internal/audit"
 	"github.com/khawsic/health/internal/auth"
 	"github.com/khawsic/health/internal/config"
+	"github.com/khawsic/health/internal/crypto"
 	record "github.com/khawsic/health/internal/records"
 	"github.com/khawsic/health/pkg/database"
 	"gorm.io/gorm"
@@ -19,7 +20,6 @@ type App struct {
 	AuditService  *audit.Service
 }
 
-// New initializes the entire application (Enterprise bootstrap)
 func New() *App {
 
 	// 1️⃣ Load configuration
@@ -35,11 +35,30 @@ func New() *App {
 	if len(cfg.EncryptionKey) != 32 {
 		log.Fatal("❌ ENCRYPTION_KEY must be exactly 32 characters for AES-256")
 	}
+	if cfg.ED25519PrivateKey == "" {
+		log.Fatal("❌ ED25519_PRIVATE_KEY is required")
+	}
+	if cfg.ED25519PublicKey == "" {
+		log.Fatal("❌ ED25519_PUBLIC_KEY is required")
+	}
 
-	// 3️⃣ Connect to database
+	// 3️⃣ Load Ed25519 keys
+	privateKey, err := crypto.LoadPrivateKey(cfg.ED25519PrivateKey)
+	if err != nil {
+		log.Fatal("❌ Failed to load ED25519 private key:", err)
+	}
+
+	publicKey, err := crypto.LoadPublicKey(cfg.ED25519PublicKey)
+	if err != nil {
+		log.Fatal("❌ Failed to load ED25519 public key:", err)
+	}
+
+	log.Println("✅ Ed25519 keys loaded successfully")
+
+	// 4️⃣ Connect to database
 	db := database.Connect(cfg.DBUrl)
 
-	// 4️⃣ Verify DB connection
+	// 5️⃣ Verify DB connection
 	sqlDB, err := db.DB()
 	if err != nil {
 		log.Fatal("❌ Failed to get sqlDB:", err)
@@ -51,14 +70,14 @@ func New() *App {
 
 	log.Println("✅ Database connection verified")
 
-	// 5️⃣ Run migrations
+	// 6️⃣ Run migrations
 	auth.Migrate(db)
 	record.Migrate(db)
 
-	// 6️⃣ Initialize services
+	// 7️⃣ Initialize services
 	authService := auth.NewService(db, cfg.JWTSecret)
 
-	auditService := audit.NewService(db)
+	auditService := audit.NewService(db, privateKey, publicKey)
 	if err := auditService.Migrate(); err != nil {
 		log.Fatal("❌ Audit migration failed:", err)
 	}
@@ -67,7 +86,7 @@ func New() *App {
 
 	log.Println("✅ Services initialized successfully")
 
-	// 7️⃣ Return App container
+	// 8️⃣ Return App container
 	return &App{
 		Config:        cfg,
 		DB:            db,

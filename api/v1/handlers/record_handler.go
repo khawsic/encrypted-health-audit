@@ -23,7 +23,6 @@ func NewRecordHandler(recordService *record.Service) *RecordHandler {
 // =========================
 func (h *RecordHandler) DoctorDashboard(c *gin.Context) {
 	userID := getUserID(c)
-
 	c.JSON(http.StatusOK, gin.H{
 		"user_id": userID,
 		"message": "Welcome Doctor",
@@ -35,7 +34,6 @@ func (h *RecordHandler) DoctorDashboard(c *gin.Context) {
 // =========================
 func (h *RecordHandler) PatientDashboard(c *gin.Context) {
 	userID := getUserID(c)
-
 	c.JSON(http.StatusOK, gin.H{
 		"user_id": userID,
 		"message": "Welcome Patient",
@@ -54,9 +52,7 @@ func (h *RecordHandler) CreateRecord(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -66,27 +62,129 @@ func (h *RecordHandler) CreateRecord(c *gin.Context) {
 		return
 	}
 
-	err := h.recordService.Create(
-		req.PatientID,
-		doctorID,
-		req.Diagnosis,
-		req.Treatment,
-	)
-
+	err := h.recordService.Create(req.PatientID, doctorID, req.Diagnosis, req.Treatment)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to create record",
-		})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create record"})
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{
-		"message": "Medical record created successfully",
-	})
+	c.JSON(http.StatusCreated, gin.H{"message": "Medical record created successfully"})
 }
 
 // =========================
-// GET PATIENT RECORDS
+// UPDATE MEDICAL RECORD (Doctor)
+// =========================
+func (h *RecordHandler) UpdateRecord(c *gin.Context) {
+
+	recordIDParam := c.Param("record_id")
+	recordIDUint, err := strconv.ParseUint(recordIDParam, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid record ID"})
+		return
+	}
+
+	var req struct {
+		Diagnosis string `json:"diagnosis" binding:"required"`
+		Treatment string `json:"treatment" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	doctorID := getUserID(c)
+	if doctorID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid session"})
+		return
+	}
+
+	err = h.recordService.Update(uint(recordIDUint), doctorID, req.Diagnosis, req.Treatment)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Medical record updated successfully"})
+}
+
+// =========================
+// GET VERSION HISTORY (Doctor)
+// =========================
+func (h *RecordHandler) GetVersionHistory(c *gin.Context) {
+
+	recordIDParam := c.Param("record_id")
+	recordIDUint, err := strconv.ParseUint(recordIDParam, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid record ID"})
+		return
+	}
+
+	versions, err := h.recordService.GetVersionHistory(uint(recordIDUint))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch version history"})
+		return
+	}
+
+	c.JSON(http.StatusOK, versions)
+}
+
+// =========================
+// SEARCH PATIENT RECORDS (Doctor)
+// =========================
+func (h *RecordHandler) SearchPatientRecords(c *gin.Context) {
+
+	patientIDParam := c.Param("patient_id")
+	patientIDUint, err := strconv.ParseUint(patientIDParam, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid patient ID"})
+		return
+	}
+
+	doctorID := getUserID(c)
+	if doctorID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid session"})
+		return
+	}
+
+	records, err := h.recordService.SearchByPatient(uint(patientIDUint), doctorID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, records)
+}
+
+// =========================
+// SOFT DELETE RECORD (Doctor)
+// =========================
+func (h *RecordHandler) DeleteRecord(c *gin.Context) {
+
+	recordIDParam := c.Param("record_id")
+	recordIDUint, err := strconv.ParseUint(recordIDParam, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid record ID"})
+		return
+	}
+
+	doctorID := getUserID(c)
+	if doctorID == 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid session"})
+		return
+	}
+
+	err = h.recordService.SoftDelete(uint(recordIDUint), doctorID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Record deleted successfully"})
+}
+
+// =========================
+// GET PATIENT RECORDS (Patient)
 // =========================
 func (h *RecordHandler) GetPatientRecords(c *gin.Context) {
 
@@ -98,9 +196,7 @@ func (h *RecordHandler) GetPatientRecords(c *gin.Context) {
 
 	records, err := h.recordService.GetByPatient(patientID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to fetch records",
-		})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch records"})
 		return
 	}
 
@@ -108,17 +204,14 @@ func (h *RecordHandler) GetPatientRecords(c *gin.Context) {
 }
 
 // =========================
-// EMERGENCY ACCESS
+// EMERGENCY ACCESS (Doctor)
 // =========================
 func (h *RecordHandler) EmergencyAccess(c *gin.Context) {
 
 	recordIDParam := c.Param("record_id")
-
 	recordIDUint, err := strconv.ParseUint(recordIDParam, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid record ID",
-		})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid record ID"})
 		return
 	}
 
@@ -128,15 +221,9 @@ func (h *RecordHandler) EmergencyAccess(c *gin.Context) {
 		return
 	}
 
-	recordData, err := h.recordService.EmergencyAccess(
-		uint(recordIDUint),
-		userID,
-	)
-
+	recordData, err := h.recordService.EmergencyAccess(uint(recordIDUint), userID)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": err.Error(),
-		})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 

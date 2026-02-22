@@ -14,14 +14,13 @@ import (
 
 func RegisterRoutes(r *gin.Engine, application *app.App) {
 
-	// Initialize handlers with dependency injection
 	authHandler := handlers.NewAuthHandler(application.AuthService)
 	recordHandler := handlers.NewRecordHandler(application.RecordService)
 	adminHandler := handlers.NewAdminHandler(application.AuditService, application.RecordService)
+	healthHandler := handlers.NewHealthHandler(application.DB)
 
 	// =========================
 	// Rate Limiter Setup
-	// 10 requests per minute on public routes
 	// =========================
 	rate := limiter.Rate{
 		Period: 1 * time.Minute,
@@ -31,10 +30,12 @@ func RegisterRoutes(r *gin.Engine, application *app.App) {
 	instance := limiter.New(store, rate)
 	rateLimitMiddleware := ginlimiter.NewMiddleware(instance)
 
-	// =========================
-	// API Version Group
-	// =========================
 	v1Group := r.Group("/api/v1")
+
+	// =========================
+	// HEALTH CHECK
+	// =========================
+	v1Group.GET("/health", healthHandler.Check)
 
 	// =========================
 	// PUBLIC ROUTES — rate limited
@@ -44,6 +45,10 @@ func RegisterRoutes(r *gin.Engine, application *app.App) {
 
 	public.POST("/register", authHandler.Register)
 	public.POST("/login", authHandler.Login)
+	public.POST("/refresh", authHandler.Refresh)
+	public.POST("/logout", authHandler.Logout)
+	public.POST("/password-reset/request", authHandler.RequestPasswordReset)
+	public.POST("/password-reset/confirm", authHandler.ResetPassword)
 
 	// =========================
 	// PROTECTED ROUTES
@@ -59,6 +64,7 @@ func RegisterRoutes(r *gin.Engine, application *app.App) {
 
 	admin.GET("/records", adminHandler.GetAllRecords)
 	admin.GET("/audit-logs", adminHandler.GetAuditLogs)
+	admin.GET("/audit-logs/filter", adminHandler.FilterAuditLogs)
 	admin.GET("/audit-logs/verify", adminHandler.VerifyAuditChain)
 
 	// -------------------------
@@ -69,6 +75,10 @@ func RegisterRoutes(r *gin.Engine, application *app.App) {
 
 	doctor.GET("/dashboard", recordHandler.DoctorDashboard)
 	doctor.POST("/records", recordHandler.CreateRecord)
+	doctor.PUT("/records/:record_id", recordHandler.UpdateRecord)
+	doctor.DELETE("/records/:record_id", recordHandler.DeleteRecord)
+	doctor.GET("/records/:record_id/history", recordHandler.GetVersionHistory)
+	doctor.GET("/patients/:patient_id/records", recordHandler.SearchPatientRecords)
 	doctor.POST("/records/emergency/:record_id", recordHandler.EmergencyAccess)
 
 	// -------------------------

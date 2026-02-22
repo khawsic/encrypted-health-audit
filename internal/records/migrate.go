@@ -7,9 +7,9 @@ import (
 )
 
 func Migrate(db *gorm.DB) {
-	err := db.AutoMigrate(&MedicalRecord{})
+	err := db.AutoMigrate(&MedicalRecord{}, &RecordVersion{})
 	if err != nil {
 		log.Fatal("❌ Record migration failed:", err)
 	}
-	log.Println("✅ MedicalRecord table migrated")
+	log.Println("✅ Record tables migrated")
 }
